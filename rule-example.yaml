@@ -1,0 +1,42 @@
+# Those rules and macros were copied from one of Falco's default rules.
+
+- rule: Terminal shell in container
+  desc: A shell was used as the entrypoint/exec point into a container with an attached terminal.
+  condition: >
+    spawned_process and container
+    and shell_procs and proc.tty != 0
+    and container_entrypoint
+    and not user_expected_terminal_shell_in_container_conditions
+  output: >
+    A shell was spawned in a container with an attached terminal (user=%user.name user_loginuid=%user.loginuid %container.info
+    shell=%proc.name parent=%proc.pname cmdline=%proc.cmdline pid=%proc.pid terminal=%proc.tty container_id=%container.id image=%container.image.repository exe_flags=%evt.arg.flags)
+  priority: NOTICE
+  enabled: true
+  tags: [container, shell, mitre_execution, T1059]
+
+- macro: spawned_process
+  condition: (evt.type in (execve, execveat) and evt.dir=<)
+
+- macro: container
+  condition: (container.id != host)
+
+- rule: Drop and execute new binary in container
+  desc:
+    Detect if an executable not belonging to the base image of a container is being executed.
+    The drop and execute pattern can be observed very often after an attacker gained an initial foothold.
+    is_exe_upper_layer filter field only applies for container runtimes that use overlayfs as union mount filesystem.
+  condition: >
+    spawned_process
+    and container
+    and proc.is_exe_upper_layer=true 
+    and not container.image.repository in (known_drop_and_execute_containers)
+  output: > 
+    Executing binary not part of base image (user=%user.name user_loginuid=%user.loginuid user_uid=%user.uid comm=%proc.cmdline exe=%proc.exe container_id=%container.id
+    image=%container.image.repository proc.name=%proc.name proc.sname=%proc.sname proc.pname=%proc.pname proc.aname[2]=%proc.aname[2] exe_flags=%evt.arg.flags
+    proc.exe_ino=%proc.exe_ino proc.exe_ino.ctime=%proc.exe_ino.ctime proc.exe_ino.mtime=%proc.exe_ino.mtime proc.exe_ino.ctime_duration_proc_start=%proc.exe_ino.ctime_duration_proc_start
+    proc.exepath=%proc.exepath proc.cwd=%proc.cwd proc.tty=%proc.tty container.start_ts=%container.start_ts proc.sid=%proc.sid proc.vpgid=%proc.vpgid evt.res=%evt.res)
+  priority: CRITICAL 
+  tags: [container, mitre_persistence, TA0003]
+
+- list: known_drop_and_execute_containers
+  items: []
